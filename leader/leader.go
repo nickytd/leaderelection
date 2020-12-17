@@ -2,11 +2,9 @@ package leader
 
 import (
 	"context"
-	"github.com/google/uuid"
 	v13 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	v12 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -14,7 +12,7 @@ import (
 	"time"
 )
 
-func SetupLeader(config *rest.Config, ctx context.Context, cancel context.CancelFunc, namespace string, configmap string) {
+func SetupLeader(config *rest.Config, ctx context.Context, cancel context.CancelFunc, namespace string, configmap string, id string) {
 
 	var clientset *kubernetes.Clientset
 	var err error
@@ -24,8 +22,6 @@ func SetupLeader(config *rest.Config, ctx context.Context, cancel context.Cancel
 		return
 	}
 
-	uid := uuid.New().String()
-
 	var configMapLock = &resourcelock.ConfigMapLock{
 		Client: clientset.CoreV1(),
 		ConfigMapMeta: v1.ObjectMeta{
@@ -33,7 +29,7 @@ func SetupLeader(config *rest.Config, ctx context.Context, cancel context.Cancel
 			Name:      configmap,
 		},
 		LockConfig: resourcelock.ResourceLockConfig{
-			Identity: uid,
+			Identity: id,
 		},
 	}
 
@@ -45,20 +41,20 @@ func SetupLeader(config *rest.Config, ctx context.Context, cancel context.Cancel
 		RetryPeriod:     2 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				klog.V(2).Infof("%s start leading", uid)
+				klog.V(2).Infof("%s start leading", id)
 				createConfigMap(
-					configMapLock.Client,
+					clientset,
 					namespace,
 					configmap,
-					uid,
+					id,
 				)
 			},
 			OnStoppedLeading: func() {
-				klog.V(2).Infof("%s stop leading", uid)
+				klog.V(2).Infof("%s stop leading", id)
 				cancel()
 			},
 			OnNewLeader: func(identity string) {
-				if identity == uid {
+				if identity == id {
 					return
 				}
 				klog.V(2).Infof("new leader %s", identity)
@@ -68,23 +64,23 @@ func SetupLeader(config *rest.Config, ctx context.Context, cancel context.Cancel
 
 }
 
-func createConfigMap(clientset v12.ConfigMapsGetter, namespace string, name string, uid string) {
+func createConfigMap(clientset *kubernetes.Clientset, namespace string, name string, id string) {
 
-	_, err := clientset.ConfigMaps(namespace).Get(
+	configmap, err := clientset.CoreV1().ConfigMaps(namespace).Get(
 		context.TODO(),
 		name,
 		v1.GetOptions{},
 	)
 	if err != nil {
 		klog.V(2).Infof("create configmap %s", name)
-		_, err = clientset.ConfigMaps(namespace).Create(
+		_, err = clientset.CoreV1().ConfigMaps(namespace).Create(
 			context.TODO(),
 			&v13.ConfigMap{
 				ObjectMeta: v1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
-				Data: map[string]string{"lock": uid},
+				Data: map[string]string{"lock": id},
 			},
 			v1.CreateOptions{},
 		)
@@ -94,16 +90,12 @@ func createConfigMap(clientset v12.ConfigMapsGetter, namespace string, name stri
 		}
 	} else {
 		klog.V(2).Infof("update configmap %s", name)
-		clientset.ConfigMaps(namespace).Update(
+		configmap.Data["lock"] = id
+		clientset.CoreV1().ConfigMaps(namespace).Update(
 			context.TODO(),
-			&v13.ConfigMap{
-				ObjectMeta: v1.ObjectMeta{
-					Name:      name,
-					Namespace: namespace,
-				},
-				Data: map[string]string{"lock": uid},
-			},
+			configmap,
 			v1.UpdateOptions{},
 		)
+
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/google/uuid"
 	"github.com/nickytd/leaderelection/leader"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -15,7 +16,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
-var kubeconfig, namespace, configmap string
+var kubeconfig, namespace, configmap, id string
 
 func main() {
 	klog.InitFlags(nil)
@@ -37,6 +38,12 @@ func main() {
 		"my-configmap",
 		"default configmap name")
 
+	flag.StringVar(
+		&id,
+		"id",
+		uuid.New().String(),
+		"leader identity")
+
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,7 +52,8 @@ func main() {
 		ctx,
 		cancel,
 		namespace,
-		configmap)
+		configmap,
+		id)
 	defer cancel()
 
 	ch := make(chan os.Signal)
