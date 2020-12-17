@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderelection
+  labels:
+    app: leaderelection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: leaderelection
+  template:
+    metadata:
+      labels:
+        app: leaderelection
+    spec:
+      serviceAccountName: leaderelection
+      containers:
+        - name: leader
+          image: nickytd/leaderelection
